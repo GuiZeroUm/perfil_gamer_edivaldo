@@ -24,7 +24,7 @@ https://git.juancjc.com.br/TURMA-SD/Perfil-Gamer.git
 
 O **Perfil Gamer** é um microsserviço REST que armazena e expõe dados de perfil de jogador vinculados ao identificador **`user_id`** do ecossistema GameVerse (tipicamente o mesmo ID emitido pelo serviço de **Autenticação** após cadastro ou login). Inclui apelido (**nickname**), foto (**avatar**), biografia, país, plataformas favoritas e jogos favoritos, em formato JSON.
 
-O serviço **não** implementa login nem emissão de tokens para as rotas de perfil descritas aqui; ele assume que quem chama a API já possui um `user_id` válido no contexto do sistema.
+O serviço **não** implementa login nem emissão de tokens. Todas as rotas de perfil exigem `Authorization: Bearer <access_token>` emitido pelo **Auth do GameVerse** (mesmo contrato JWT RS256: `iss`, `aud`, `sub`, `exp`). O `user_id` do perfil é sempre o claim **`sub`** do token — o cliente não envia `user_id` no corpo do POST.
 
 ---
 
@@ -97,7 +97,7 @@ Fluxo ilustrativo:
 | Framework | **Laravel** **^13** |
 | API | REST, JSON |
 | ORM / persistência | Eloquent |
-| Autenticação API (rota auxiliar) | Laravel **Sanctum** (rota `GET /api/user` com middleware; rotas de perfil não exigem Sanctum no código atual) |
+| Autenticação API | Middleware **`jwt.auth`** (`firebase/php-jwt`) nas rotas de perfil; Sanctum apenas em `GET /api/user` |
 | Banco (padrão do projeto) | **SQLite** (`database/database.sqlite`) |
 | Front build (opcional para assets) | Vite, Tailwind (dependências npm do esqueleto Laravel) |
 
@@ -176,6 +176,9 @@ Principais variáveis:
 | `APP_URL` | **URL base pública** do serviço (ex.: `http://127.0.0.1:8000`). Afeta URLs absolutas de `avatar`. |
 | `DB_CONNECTION` | `sqlite` (padrão no `.env.example`) ou `mysql` / `mariadb`. |
 | `DB_DATABASE` | Para SQLite, costuma apontar para `database/database.sqlite` (padrão do Laravel se não definido). |
+| `JWT_ISSUER` | Mesmo valor do Auth GameVerse (ex.: `https://auth.local`). |
+| `JWT_AUDIENCE` | Mesmo valor do Auth (ex.: `internal-apis`). |
+| `JWT_PUBLIC_KEY_PEM` | Chave pública RS256 do Auth (`\n` literais no `.env`). |
 
 Há também chaves para fila, sessão e cache em banco (`SESSION_DRIVER`, `QUEUE_CONNECTION`, `CACHE_STORE` no `.env.example`); as migrations padrão do Laravel cobrem tabelas auxiliares quando usar `database`.
 
@@ -227,9 +230,10 @@ Prefixo global das rotas definidas em `routes/api.php`: **`/api`**.
 
 | Método HTTP | Endpoint | Descrição |
 |-------------|----------|-----------|
-| GET | `/api/profiles` | Lista todos os perfis. |
-| POST | `/api/profiles` | Cria um novo perfil (recomendado **multipart/form-data** se houver `avatar`). |
-| GET | `/api/profiles/{user_id}` | Busca perfil pelo **`user_id`** (valor numérico na URL; o parâmetro de rota do Laravel pode aparecer como `{profile}` internamente, mas o significado é o `user_id`). |
+| GET | `/api/profiles/me` | Perfil do usuário autenticado (`sub` do JWT). **404** se ainda não existir. |
+| GET | `/api/profiles` | Lista todos os perfis (requer JWT). |
+| POST | `/api/profiles` | Cria perfil para o `sub` do token (recomendado **multipart/form-data** se houver `avatar`). |
+| GET | `/api/profiles/{user_id}` | Busca perfil pelo **`user_id`** (UUID do ecossistema; só o próprio usuário). |
 | PUT | `/api/profiles/{user_id}` | Atualização completa dos campos enviados (validação no controller). |
 | PATCH | `/api/profiles/{user_id}` | Atualização parcial (mesma action `update`). |
 | DELETE | `/api/profiles/{user_id}` | Remove o perfil. |
@@ -241,13 +245,14 @@ Prefixo global das rotas definidas em `routes/api.php`: **`/api`**.
 
 ### POST `/api/profiles` (somente JSON, sem arquivo de avatar)
 
+**Header:** `Authorization: Bearer <access_token>`
+
 **Content-Type:** `application/json`
 
 **Requisição:**
 
 ```json
 {
-  "user_id": 1,
   "nickname": "PlayerOne",
   "bio": "Apaixonado por RPGs.",
   "country": "Brasil",
@@ -260,7 +265,7 @@ Prefixo global das rotas definidas em `routes/api.php`: **`/api`**.
 
 ```json
 {
-  "user_id": 1,
+  "user_id": "90de0b23-fea5-46e2-8ed6-288daf79f39c",
   "nickname": "PlayerOne",
   "avatar": null,
   "bio": "Apaixonado por RPGs.",

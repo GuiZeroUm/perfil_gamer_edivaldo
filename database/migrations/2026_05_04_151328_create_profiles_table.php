@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('profiles', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->unique(); // ID para integração[cite: 1]
+            $table->string('user_id', 36)->unique();
             $table->string('nickname')->unique();            // Nickname único[cite: 1]
             $table->string('avatar')->nullable();            // URL da imagem[cite: 1]
             $table->text('bio')->nullable();                 // Bio[cite: 1]
